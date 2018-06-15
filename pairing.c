@@ -1,4 +1,5 @@
 // gcc -o pairing pairing.c -ltepla -lssl -lgmp -lcrypto
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,96 +59,122 @@ int main(void) {
     mpz_set_ui(limit, 2);
     mpz_pow_ui(limit, limit, 254);
     gmp_printf ("%s is %Zd\n", "limit", limit);
-    
+
     /* --- マスター秘密鍵生成 --- */
     mpz_t s;
     mpz_init(s);
     create_master_private_key(s, limit);
     gmp_printf ("%s is %Zd\n", "secret", s);
-    
+
     /* --- ペアリングの生成 --- */
     EC_PAIRING p;
     pairing_init(p, "ECBN254a");
+
     /* --- 楕円曲線 E の生成 --- */
     // 楕円曲線E = p->g1
     // 有限体F = p->g3
-    
+
     /* --- 楕円曲線 E 上の点 P の生成 --- */
     EC_POINT P;
     point_init(P, p->g1);
     point_random(P);
     printf("P=   ");
     point_print(P);
-    
+
     /* --- sP の計算 --- */
     EC_POINT sP;
-    point_init(sP, p->g1);  // g2にしてた
-    point_mul(sP, s, P);    // g2とsをかけると0になってた
+    point_init(sP, p->g1);
+    point_mul(sP, s, P);
     printf("sP=  ");
     point_print(sP);
-    
+
 /* ----- Encode ----- */
     /* --- IDと平文m --- */
     char id[] = "shirase";
     char m[]  = "hello_world!";
-    
+
     /* --- AさんのIDをP_Aに変換 --- */
     EC_POINT P_A;
-    point_init(P_A, p->g2); // g1にしてた
+    point_init(P_A, p->g2);
     hash1(P_A, id);
     printf("P_A= ");
     point_print(P_A);
-    
+
     /* --- ランダムな値 r --- */
     mpz_t r;
     mpz_init(r);
     create_mpz_t_random(r, limit);
     gmp_printf ("%s is %Zd\n", "random", r);
-    
+
     /* --- rP の計算 --- */
     EC_POINT rP;
     point_init(rP, p->g1);
     point_mul(rP, r, P);
     printf("rP=  ");
     point_print(rP);
-    
-    /* --- rP -> srP (r乗の表現)--- */
-    point_mul(sP, r, sP);
-    printf("sP=  ");
-    point_print(sP);
-    
+
     /* --- e(P_A, sP)^r の計算 --- */
     Element g;
     element_init(g, p->g3);
     pairing_map(g, sP, P_A, p); // 第3引数はg2を参照のこと
+    element_pow(g, g, r);       // r乗する
     element_print(g);
 
+    /* --- gを文字列化 --- */
+    int element_str_length = element_get_str_length(g);
+    char *element_str;
+    element_str = (char *)malloc(element_str_length+1);
+    if(element_str == NULL) {
+        printf("メモリが確保できませんでした。\n");
+        return 0;
+    }else{
+        printf("element_str_length: %d\n", element_str_length);
+        element_get_str(element_str, g);
+//        printf("element_str: %s\n", element_str);
+    }
+
+
     //TODO: gとmをxor
-    
-    
+
+
 /* ----- Decode ----- */
-    
+
+
+
+/* ----- 領域の解放 ----- */
+    free(element_str);
+    mpz_clears(limit, s, r, NULL);
+    element_clear(g);
+    point_clear(P);
+    point_clear(sP);
+    point_clear(P_A);
+    point_clear(rP);
+    pairing_clear(p);
+
+    printf("--- 正常終了 ---\n");
     return 0;
 }
 
+
+// reference: http://a4dosanddos.hatenablog.com/entry/2015/03/01/191730
 void ID_to_hash(char* id) {
     MD5_CTX c;
     unsigned char md[MD5_DIGEST_LENGTH];
     char mdString[33];
     int r, i;
-    
+
     r = MD5_Init(&c);
     if(r != 1) { perror("init"); exit(1); }
     r = MD5_Update(&c, id, strlen(id));
     if(r != 1) { perror("update"); exit(1); }
     r = MD5_Final(md, &c);
     if(r != 1) { perror("final"); exit(1); }
-    
+
     for(i = 0; i < 16; i++)
         sprintf(&mdString[i * 2], "%02x", (unsigned int)md[i]);
-    
+
     printf("md5 digest: %s\n", mdString);
-    
+
     mpz_t ret;
     mpz_init(ret);
     mpz_set_ui (ret, strtol(mdString, NULL, 16));
