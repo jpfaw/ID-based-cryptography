@@ -6,14 +6,14 @@
 
 #include <gmp.h>
 #include <tepla/ec.h>
-#include <openssl/md5.h>
-
-void ID_to_hash(char* id);
+#include<openssl/sha.h>
 
 typedef struct{
     EC_POINT P; // 楕円曲線上の点P
     EC_POINT Q; // 公開鍵
 } Public_key;
+
+void char_to_hash(unsigned char *hash, char* id);
 
 // IDを貰ってE上の点Pへのハッシュ変換を行う(引数: 点P, ID)
 void hash1(EC_POINT P,const char *id) {
@@ -50,6 +50,9 @@ void create_mpz_t_random(mpz_t op, const mpz_t n) {
     gmp_randinit_default(state);
     mpz_urandomm(op, state, n);
 }
+
+
+
 
 int main(void) {
 /* ----- セットアップ ----- */
@@ -130,9 +133,11 @@ int main(void) {
     }else{
         printf("element_str_length: %d\n", element_str_length);
         element_get_str(element_str, g);
-//        printf("element_str: %s\n", element_str);
+        printf("element_str: %s\n", element_str);
     }
-
+    
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    char_to_hash(hash, element_str);
 
     //TODO: gとmをxor
 
@@ -155,31 +160,18 @@ int main(void) {
     return 0;
 }
 
-
-// reference: http://a4dosanddos.hatenablog.com/entry/2015/03/01/191730
-void ID_to_hash(char* id) {
-    MD5_CTX c;
-    unsigned char md[MD5_DIGEST_LENGTH];
-    char mdString[33];
-    int r, i;
-
-    r = MD5_Init(&c);
-    if(r != 1) { perror("init"); exit(1); }
-    r = MD5_Update(&c, id, strlen(id));
-    if(r != 1) { perror("update"); exit(1); }
-    r = MD5_Final(md, &c);
-    if(r != 1) { perror("final"); exit(1); }
-
-    for(i = 0; i < 16; i++)
-        sprintf(&mdString[i * 2], "%02x", (unsigned int)md[i]);
-
-    printf("md5 digest: %s\n", mdString);
-
-    mpz_t ret;
-    mpz_init(ret);
-    mpz_set_ui (ret, strtol(mdString, NULL, 16));
-    gmp_printf ("%s is an mpz %Zd\n", "here", ret);
-//    return ret;
+/* --- 文字列をSHA256でハッシュ化 --- */
+void char_to_hash(unsigned char *hash, char* id){
+    
+    //    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(id,strlen(id),hash);
+    
+    /* --- debug print --- */
+    printf("hash: ");
+    for ( size_t i = 0; i < SHA256_DIGEST_LENGTH; i++ ){
+        printf("%02x", hash[i] );
+    }
+    printf("\n");
 }
 
 void hash_to_ell_point(mpz_t x) {
