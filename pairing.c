@@ -1,4 +1,4 @@
-// gcc -o pairing pairing.c -ltepla -lssl -lgmp -lcrypto
+// gcc -o pairing pairing.c -ltepla -lssl -lgmp -lcrypto -std=c99
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +14,8 @@ typedef struct{
 } Public_key;
 
 void char_to_hash(unsigned char *hash, char* id);
+void print_unsigned_char(unsigned char *uc, char *dataName, size_t size);
+void exclusive_disjunction(unsigned char *ciphertext, unsigned char *hash, char *plaintext);
 
 // IDを貰ってE上の点Pへのハッシュ変換を行う(引数: 点P, ID)
 void hash1(EC_POINT P,const char *id) {
@@ -136,8 +138,15 @@ int main(void) {
         printf("element_str: %s\n", element_str);
     }
     
+    /* --- 文字列のハッシュ化 --- */
     unsigned char hash[SHA256_DIGEST_LENGTH];
     char_to_hash(hash, element_str);
+    unsigned char ciphertext[strlen(m)+1];
+    unsigned char ciphertext2[strlen(m)+1];
+    
+    exclusive_disjunction(ciphertext, hash, m);
+    exclusive_disjunction(ciphertext2, hash, ciphertext); // 正常にXORできてるか検証
+    printf("%s\n", ciphertext2);
 
     //TODO: gとmをxor
 
@@ -160,26 +169,56 @@ int main(void) {
     return 0;
 }
 
-/* --- 文字列をSHA256でハッシュ化 --- */
+/* -----------------------------------------
+ * 文字列をSHA256でハッシュ化する関数
+ * $0 ハッシュ化したものを入れるchar配列ポインタ
+ * $1 ハッシュ化する文字列
+  -----------------------------------------*/
 void char_to_hash(unsigned char *hash, char* id){
     
     //    unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256(id,strlen(id),hash);
     
     /* --- debug print --- */
-    printf("hash: ");
-    for ( size_t i = 0; i < SHA256_DIGEST_LENGTH; i++ ){
-        printf("%02x", hash[i] );
+    print_unsigned_char(hash, "hash", SHA256_DIGEST_LENGTH);
+}
+
+/* -----------------------------------------
+ * 排他的論理和を計算する関数
+ * $0 計算結果を入れるu_char配列ポインタ
+ * $1 XORする値
+ * $2 平文
+ * 今は平文の方が短い場合のみ対応
+ -----------------------------------------*/
+void exclusive_disjunction(unsigned char *ciphertext, unsigned char *hash, char *plaintext) {
+
+    size_t index = strlen(plaintext);
+
+    // 文字列の長さを合わせる
+    if(strlen(hash) >= strlen(plaintext)) {
+        hash[index] = '\0';
+    }
+
+    // 1文字ずつ分解し、XOR演算する
+    for(size_t i=0; i<strlen(plaintext); i++){
+        ciphertext[i] = plaintext[i]^hash[i];
+    }
+
+    ciphertext[index] = '\0';
+    print_unsigned_char(ciphertext, "ciphertext", index);
+}
+
+/* -----------------------------------------------
+ * unsigned char(SHA256でハッシュ化した値)を出力する関数
+ * $0 出力するu_char
+ * $1 データ名（出力の最初にprintされる）
+ * $2 データサイズ
+ * 今は平文の方が短い場合のみ対応
+ -----------------------------------------------*/
+void print_unsigned_char(unsigned char *uc, char *dataName, size_t size){
+    printf("%s: ", dataName);
+    for (size_t i=0; i<size; i++){
+        printf("%02x", uc[i] );
     }
     printf("\n");
 }
-
-void hash_to_ell_point(mpz_t x) {
-    
-}
-
-void ell_point_to_field() {
-    // TODO: mod p?
-}
-
-
