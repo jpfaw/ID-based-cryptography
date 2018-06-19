@@ -13,6 +13,7 @@ typedef struct{
     EC_POINT Q; // 公開鍵
 } Public_key;
 
+void print_green_color(char *text);
 void char_to_hash(unsigned char *hash, const char* id);
 void print_unsigned_char(const unsigned char *uc, const char *dataName, const size_t size);
 void exclusive_disjunction(unsigned char *ciphertext, const unsigned char *hash,
@@ -61,13 +62,15 @@ int main(void) {
     mpz_init(limit);
     mpz_set_ui(limit, 2);
     mpz_pow_ui(limit, limit, 254);
-    gmp_printf ("%s is %Zd\n", "limit", limit);
+    print_green_color("limit = ");
+    gmp_printf ("%s%Zd\n", "", limit);
 
     /* --- マスター秘密鍵生成 --- */
     mpz_t s;
     mpz_init(s);
     create_master_private_key(s, limit);
-    gmp_printf ("%s is %Zd\n", "secret", s);
+    print_green_color("secret = ");
+    gmp_printf ("%s%Zd\n", "", s);
 
     /* --- ペアリングの生成 --- */
     EC_PAIRING p;
@@ -79,16 +82,16 @@ int main(void) {
 
     /* --- 楕円曲線 E 上の点 P の生成 --- */
     EC_POINT P;
-    point_init(P, p->g1);
+    point_init(P, p->g2);
     point_random(P);
-    printf("P=   ");
+    print_green_color("P =  ");
     point_print(P);
 
     /* --- sP の計算 --- */
     EC_POINT sP;
-    point_init(sP, p->g1);
+    point_init(sP, p->g2);
     point_mul(sP, s, P);
-    printf("sP=  ");
+    print_green_color("sP = ");
     point_print(sP);
 
 /* ----- Encode ----- */
@@ -100,51 +103,57 @@ int main(void) {
 
     /* --- AさんのIDをP_Aに変換 --- */
     EC_POINT P_A;
-    point_init(P_A, p->g2);
+    point_init(P_A, p->g1);
     hash1(P_A, id);
-    printf("P_A= ");
+    print_green_color("P_A = ");
     point_print(P_A);
 
     /* --- ランダムな値 r --- */
     mpz_t r;
     mpz_init(r);
     create_mpz_t_random(r, limit);
-    gmp_printf ("%s is %Zd\n", "random", r);
+    print_green_color("random = ");
+    gmp_printf ("%s%Zd\n", "", r);
 
     /* --- rP の計算 --- */
     EC_POINT rP;
-    point_init(rP, p->g1);
+    point_init(rP, p->g2);
     point_mul(rP, r, P);
-    printf("rP=  ");
+    print_green_color("rP = ");
     point_print(rP);
 
     /* --- g = e(P_A, sP)^r の計算 --- */
     Element g;
     element_init(g, p->g3);
-    pairing_map(g, sP, P_A, p); // 第3引数はg2を参照のこと
+    pairing_map(g, P_A, sP, p); // 第3引数はg2を参照のこと
     element_pow(g, g, r);       // r乗する
+    print_green_color("g =  ");
     element_print(g);
 
     /* --- gを文字列化 --- */
-    int element_str_length = element_get_str_length(g);
-    char *element_str;
-    element_str = (char *)malloc(element_str_length+1);
-    if(element_str == NULL) {
+    int g_element_str_length = element_get_str_length(g);
+    char *g_element_str;
+    g_element_str = (char *)malloc(g_element_str_length+1);
+    if(g_element_str == NULL) {
         printf("メモリが確保できませんでした。\n");
         return 0;
     }else{
-        printf("element_str_length: %d\n", element_str_length);
-        element_get_str(element_str, g);
-        printf("element_str: %s\n", element_str);
+        element_get_str(g_element_str, g);
+        print_green_color("g_element_str_length = ");
+        printf("%d\n", g_element_str_length);
+        print_green_color("g_element_str = ");
+        printf("%s\n", g_element_str);
     }
 
     /* --- gのハッシュ化 --- */
     unsigned char g_hash[SHA256_DIGEST_LENGTH];
-    char_to_hash(g_hash, element_str);
+    char_to_hash(g_hash, g_element_str);
 
     /* --- g_hashとmをXOR --- */
     unsigned char ciphertext[strlen(m)+1];
     exclusive_disjunction(ciphertext, g_hash, m, strlen(g_hash), m_length);
+    
+    // この段階で、Enc(m)→暗号文C=(U, v)=(rP, ciphertext)
 
 // 正常にXORできてるか検証
 //    unsigned char ciphertext2[strlen(m)+1];
@@ -152,17 +161,58 @@ int main(void) {
 //    printf("main ciphertext2: %s\n", ciphertext2);
 
 /* ----- Decode ----- */
-
+    /* --- Aさんの秘密鍵K_Aを生成 --- */
+    EC_POINT K_A;
+    point_init(K_A, p->g1);
+    point_mul(K_A, s, P_A);
+    print_green_color("K_A = ");
+    point_print(K_A);
+    
+    /* --- e(K_A, U)の計算 --- */
+    Element a;
+    element_init(a, p->g3);
+    pairing_map(a, K_A, rP, p);
+    print_green_color("a = ");
+    element_print(a);
+    
+    /* --- aを文字列化 --- */
+    int a_element_str_length = element_get_str_length(a);
+    char *a_element_str;
+    a_element_str = (char *)malloc(a_element_str_length+1);
+    if(a_element_str == NULL) {
+        printf("メモリが確保できませんでした。\n");
+        return 0;
+    }else{
+        element_get_str(a_element_str, a);
+        print_green_color("a_element_str_length = ");
+        printf("%d\n", a_element_str_length);
+        print_green_color("a_element_str = ");
+        printf("%s\n", a_element_str);
+    }
+    
+    /* --- aのハッシュ化 --- */
+    unsigned char a_hash[SHA256_DIGEST_LENGTH];
+    char_to_hash(a_hash, a_element_str);
+    
+    /* --- v XOR a --- */
+    unsigned char ciphertext3[m_length+1];
+    exclusive_disjunction(ciphertext3, a_hash, ciphertext, strlen(a_hash), m_length);
+    print_green_color("結果 : ");
+    printf("%s\n", ciphertext3);
+    
 
 
 /* ----- 領域の解放 ----- */
-    free(element_str);
+    free(g_element_str);
+    free(a_element_str);
     mpz_clears(limit, s, r, NULL);
     element_clear(g);
+    element_clear(a);
     point_clear(P);
     point_clear(sP);
     point_clear(P_A);
     point_clear(rP);
+    point_clear(K_A);
     pairing_clear(p);
 
     printf("--- 正常終了 ---\n");
@@ -203,12 +253,19 @@ void exclusive_disjunction(unsigned char *ciphertext, const unsigned char *hash,
  * $0 出力するu_char
  * $1 データ名（出力の最初にprintされる）
  * $2 データサイズ
- * 今は平文の方が短い場合のみ対応
  -----------------------------------------------*/
 void print_unsigned_char(const unsigned char *uc, const char *dataName, const size_t size){
-    printf("\x1b[32m%s:\x1b[39m ", dataName);
+    print_green_color(dataName);
     for (size_t i=0; i<size; i++){
         printf("%02x", uc[i] );
     }
     printf("\n");
+}
+
+/* -----------------------------------------------
+ * 文字列を緑色で出力する関数
+ * $0 出力したい文字列
+ -----------------------------------------------*/
+void print_green_color(char *text) {
+    printf("\x1b[32m%s\x1b[39m", text);
 }
