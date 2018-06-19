@@ -8,52 +8,15 @@
 #include <tepla/ec.h>
 #include <openssl/sha.h>
 
-typedef struct{
-    EC_POINT P; // 楕円曲線上の点P
-    EC_POINT Q; // 公開鍵
-} Public_key;
-
-void print_green_color(char *text);
+// プロトタイプ宣言
+void print_green_color(const char *text);
+void hash1(EC_POINT P,const char *id);
+void create_mpz_t_random(mpz_t op, const mpz_t n);
 void char_to_hash(unsigned char *hash, const char* id);
+void create_master_private_key(mpz_t private_key, const mpz_t n);
 void print_unsigned_char(const unsigned char *uc, const char *dataName, const size_t size);
 void exclusive_disjunction(unsigned char *ciphertext, const unsigned char *hash,
                            const char *text, const size_t hashSize, const size_t textSize);
-
-// IDを貰ってE上の点Pへのハッシュ変換を行う(引数: 点P, ID)
-void hash1(EC_POINT P,const char *id) {
-    point_map_to_point(P, id, strlen(id), 128); // SHA-256
-}
-
-// E上の点から有限体へのハッシュ関数
-void hash2(EC_PAIRING P) {
-    //P->g3
-}
-
-// 鍵生成局が使用するマスター秘密鍵を生成する(引数: 秘密鍵を入れる変数, 上限値)
-void create_master_private_key(mpz_t private_key, const mpz_t n) {
-    gmp_randstate_t state;
-    gmp_randinit_default(state);
-    mpz_urandomm(private_key, state, n); // privae_key = (0 <= random value <= n-1)
-}
-
-// 鍵生成局がユーザに配布する秘密鍵(K_x)を生成する(引数: 代入する点, 点P, ID, マスター秘密鍵)
-void create_user_private_key(EC_POINT K_X, EC_POINT P_X, const char* id, mpz_t master_private_key) {
-    hash1(P_X, id);                             // 1. ID -> E上の点P_X
-    point_mul(K_X, master_private_key, P_X);    // 2. K_X = sP_X
-}
-
-// 公開鍵を生成する(引数: 公開鍵を入れる変数, 秘密鍵, 点P)
-void create_public_key(Public_key public_key, const mpz_t private_key, const EC_POINT P) {
-    point_set(public_key.P, P);
-    point_mul(public_key.Q, private_key, P); // Q = private_key * P
-}
-
-// mpz_tでランダムな値を生成・返却する(引数: 上限値)
-void create_mpz_t_random(mpz_t op, const mpz_t n) {
-    gmp_randstate_t state;
-    gmp_randinit_default(state);
-    mpz_urandomm(op, state, n);
-}
 
 int main(void) {
 /* ----- セットアップ ----- */
@@ -75,10 +38,6 @@ int main(void) {
     /* --- ペアリングの生成 --- */
     EC_PAIRING p;
     pairing_init(p, "ECBN254a");
-
-    /* --- 楕円曲線 E の生成 --- */
-    // 楕円曲線E = p->g1
-    // 有限体F = p->g3
 
     /* --- 楕円曲線 E 上の点 P の生成 --- */
     EC_POINT P;
@@ -125,7 +84,7 @@ int main(void) {
     /* --- g = e(P_A, sP)^r の計算 --- */
     Element g;
     element_init(g, p->g3);
-    pairing_map(g, P_A, sP, p); // 第3引数はg2を参照のこと
+    pairing_map(g, P_A, sP, p); // $1はg1, $2はg2を使用している必要がある
     element_pow(g, g, r);       // r乗する
     print_green_color("g =  ");
     element_print(g);
@@ -152,7 +111,7 @@ int main(void) {
     /* --- g_hashとmをXOR --- */
     unsigned char ciphertext[strlen(m)+1];
     exclusive_disjunction(ciphertext, g_hash, m, strlen(g_hash), m_length);
-    
+
     // この段階で、Enc(m)→暗号文C=(U, v)=(rP, ciphertext)
 
 // 正常にXORできてるか検証
@@ -167,14 +126,14 @@ int main(void) {
     point_mul(K_A, s, P_A);
     print_green_color("K_A = ");
     point_print(K_A);
-    
+
     /* --- e(K_A, U)の計算 --- */
     Element a;
     element_init(a, p->g3);
     pairing_map(a, K_A, rP, p);
     print_green_color("a = ");
     element_print(a);
-    
+
     /* --- aを文字列化 --- */
     int a_element_str_length = element_get_str_length(a);
     char *a_element_str;
@@ -189,18 +148,16 @@ int main(void) {
         print_green_color("a_element_str = ");
         printf("%s\n", a_element_str);
     }
-    
+
     /* --- aのハッシュ化 --- */
     unsigned char a_hash[SHA256_DIGEST_LENGTH];
     char_to_hash(a_hash, a_element_str);
-    
+
     /* --- v XOR a --- */
     unsigned char ciphertext3[m_length+1];
     exclusive_disjunction(ciphertext3, a_hash, ciphertext, strlen(a_hash), m_length);
     print_green_color("結果 : ");
     printf("%s\n", ciphertext3);
-    
-
 
 /* ----- 領域の解放 ----- */
     free(g_element_str);
@@ -219,25 +176,58 @@ int main(void) {
     return 0;
 }
 
-/* -----------------------------------------
+/* -----------------------------------------------
+ * IDを貰ってE上の点Pへのハッシュ変換を行う関数
+ * $0 ハッシュ変換したものを入れるEC_POINT(点P)
+ * $1 ID
+ -----------------------------------------------*/
+void hash1(EC_POINT P,const char *id) {
+    point_map_to_point(P, id, strlen(id), 128); // SHA-256
+}
+
+/* -----------------------------------------------
+ * 鍵生成局が使用するマスター秘密鍵を生成する関数
+ * $0 秘密鍵を入れる変数
+ * $1 上限値
+ -----------------------------------------------*/
+void create_master_private_key(mpz_t private_key, const mpz_t n) {
+    gmp_randstate_t state;
+    gmp_randinit_default(state);
+    mpz_urandomm(private_key, state, n); // privae_key = (0 <= random value <= n-1)
+}
+
+/* -----------------------------------------------
+ * mpz_tでランダムな値を生成する関数
+ * $0 生成した値を入れる変数
+ * $1 上限値
+ -----------------------------------------------*/
+void create_mpz_t_random(mpz_t op, const mpz_t n) {
+    gmp_randstate_t state;
+    gmp_randinit_default(state);
+    mpz_urandomm(op, state, n);
+}
+
+/* -------------------------- ↓暗号と関係ない関数↓ -------------------------- */
+
+/* -----------------------------------------------
  * 文字列をSHA256でハッシュ化する関数
  * $0 ハッシュ化したものを入れるchar配列ポインタ
  * $1 ハッシュ化する文字列
-  -----------------------------------------*/
+  -----------------------------------------------*/
 void char_to_hash(unsigned char *hash, const char* id){
     SHA256(id,strlen(id),hash);
     /* --- debug print --- */
     print_unsigned_char(hash, "hash", SHA256_DIGEST_LENGTH);
 }
 
-/* -----------------------------------------
+/* -----------------------------------------------
  * 排他的論理和を計算する関数
  * $0 計算結果を入れるu_char配列ポインタ
  * $1 XORする値
  * $2 平文/暗号化文
  * $3 ハッシュの文字数
  * $4 テキストの文字数
- -----------------------------------------*/
+ -----------------------------------------------*/
 void exclusive_disjunction(unsigned char *ciphertext, const unsigned char *hash,
                            const char *text, const size_t hashSize, const size_t textSize) {
     // 1文字ずつ分解し、XOR演算する
@@ -255,7 +245,7 @@ void exclusive_disjunction(unsigned char *ciphertext, const unsigned char *hash,
  * $2 データサイズ
  -----------------------------------------------*/
 void print_unsigned_char(const unsigned char *uc, const char *dataName, const size_t size){
-    print_green_color(dataName);
+    printf("\x1b[32m%s = \x1b[39m", dataName);
     for (size_t i=0; i<size; i++){
         printf("%02x", uc[i] );
     }
@@ -266,6 +256,6 @@ void print_unsigned_char(const unsigned char *uc, const char *dataName, const si
  * 文字列を緑色で出力する関数
  * $0 出力したい文字列
  -----------------------------------------------*/
-void print_green_color(char *text) {
+void print_green_color(const char *text) {
     printf("\x1b[32m%s\x1b[39m", text);
 }
