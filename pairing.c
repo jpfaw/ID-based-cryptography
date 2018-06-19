@@ -54,9 +54,6 @@ void create_mpz_t_random(mpz_t op, const mpz_t n) {
     mpz_urandomm(op, state, n);
 }
 
-
-
-
 int main(void) {
 /* ----- セットアップ ----- */
     /* --- 上限値の設定 --- */
@@ -95,9 +92,11 @@ int main(void) {
     point_print(sP);
 
 /* ----- Encode ----- */
-    /* --- IDと平文m --- */
+    /* --- IDと平文mとmの長さ --- */
     char id[] = "shirase";
+//    char m[]  = "hello_world!";
     char m[]  = "hello_world!日本国民は、正当に選挙された国会における代表者を通じて行動し、われらとわれらの子孫のために、諸国民との協和による成果と、わが国全土にわたつて自由のもたらす恵沢を確保し、政府の行為によつて再び戦争の惨禍が起ることのないやうにすることを決意し、ここに主権が国民に存することを宣言し、この憲法を確定する。そもそも国政は、国民の厳粛な信託によるものであつて、その権威は国民に由来し、その権力は国民の代表者がこれを行使し、その福利は国民がこれを享受する。これは人類普遍の原理であり、この憲法は、かかる原理に基くものである。われらは、これに反する一切の憲法、法令及び詔勅を排除する。";
+    int m_length = strlen(m);
 
     /* --- AさんのIDをP_Aに変換 --- */
     EC_POINT P_A;
@@ -145,14 +144,12 @@ int main(void) {
 
     /* --- g_hashとmをXOR --- */
     unsigned char ciphertext[strlen(m)+1];
-    exclusive_disjunction(ciphertext, g_hash, m, strlen(g_hash), strlen(m));
+    exclusive_disjunction(ciphertext, g_hash, m, strlen(g_hash), m_length);
 
 // 正常にXORできてるか検証
-    unsigned char ciphertext2[strlen(m)+1];
-    exclusive_disjunction(ciphertext2, g_hash, ciphertext, strlen(g_hash), strlen(m));
-    printf("%s\n", ciphertext2);
-
-// この段階で、Enc(m)→暗号文C=(U, v)=(rP, ciphertext)
+//    unsigned char ciphertext2[strlen(m)+1];
+//    exclusive_disjunction(ciphertext2, g_hash, ciphertext, strlen(g_hash), m_length);
+//    printf("main ciphertext2: %s\n", ciphertext2);
 
 /* ----- Decode ----- */
 
@@ -178,8 +175,6 @@ int main(void) {
  * $1 ハッシュ化する文字列
   -----------------------------------------*/
 void char_to_hash(unsigned char *hash, const char* id){
-    
-    //    unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256(id,strlen(id),hash);
     /* --- debug print --- */
     print_unsigned_char(hash, "hash", SHA256_DIGEST_LENGTH);
@@ -195,14 +190,10 @@ void char_to_hash(unsigned char *hash, const char* id){
  -----------------------------------------*/
 void exclusive_disjunction(unsigned char *ciphertext, const unsigned char *hash,
                            const char *text, const size_t hashSize, const size_t textSize) {
-    printf("hashSize: %d\ntextSize: %d\n", strlen(text), textSize);
-    
-    //TODO: hashの文字数がXORした後に変動する
     // 1文字ずつ分解し、XOR演算する
     for(size_t i=0; i<textSize; i++){
         ciphertext[i] = text[i]^hash[i%hashSize];
     }
-
     ciphertext[textSize] = '\0';
     print_unsigned_char(ciphertext, "ciphertext", textSize);
 }
@@ -215,7 +206,7 @@ void exclusive_disjunction(unsigned char *ciphertext, const unsigned char *hash,
  * 今は平文の方が短い場合のみ対応
  -----------------------------------------------*/
 void print_unsigned_char(const unsigned char *uc, const char *dataName, const size_t size){
-    printf("%s: ", dataName);
+    printf("\x1b[32m%s:\x1b[39m ", dataName);
     for (size_t i=0; i<size; i++){
         printf("%02x", uc[i] );
     }
